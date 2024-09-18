@@ -49,7 +49,6 @@ def retrieveIXNInfo(data_path: Path):
     positions = []
     wavelengths = []
     for file in file_list:
-        # print(file)
         splits = file.split('_')
         name = splits[0]
         wells.append(splits[1])
@@ -76,8 +75,8 @@ def retrieveIXNInfo(data_path: Path):
         channel_names.append(metadata['ImageXpress Micro Filter Cube'])
 
         #write file
-        name = date + '_' + wavelength + '_metadata.txt'
-        txtfile = data_dir / name
+        metadataname = date + '_' + wavelength + '_metadata.txt'
+        txtfile = data_dir / metadataname
         with open(txtfile, 'w') as txt:
             for key in relevant_keys:
                 txt.write(key + ':' + str(metadata[key]) + '\n')
@@ -99,11 +98,10 @@ def select_dir(IXN_widget):
     # import retrieveIXNInfo
 
     dir_path = QtWidgets.QFileDialog.getExistingDirectory()
-    IXN_widget.IXN_folder_path = Path(dir_path)
     IXN_widget.path_selector_button.setToolTip(dir_path)
 
     # retrieve expt info and assign it to the ui
-    IXN_widget.expt_info = retrieveIXNInfo(IXN_widget.IXN_folder_path)
+    IXN_widget.expt_info = retrieveIXNInfo(Path(dir_path))
 
     # retrieve the metadata to read the filters used for each wavelength
     lineedit_dict = {2 : IXN_widget.ch2_LineEdit,
@@ -133,12 +131,16 @@ def loadPositiongivenWell(IXN_widget):
     well = IXN_widget.well_selector.currentText()
     pos  = IXN_widget.posi_selector.currentText()
 
-    parts = [IXN_widget.expt_info.name, well, pos, 'w']
-
-    name_stub = "_".join(parts)
+    name_stub = "_".join([IXN_widget.expt_info.name, well, pos, 'w'])
     IXN_widget.expt_info.current_name_stub = name_stub
     remove_napari_layers(IXN_widget) # remove old layers
+    print(name_stub+str(1+1)+'*')
+    print(Path(IXN_widget.expt_info.data_dir
+                    / IXN_widget.expt_info.timepoints[0]))
+    print(IXN_widget.expt_info.timepoints[0])
 
+    print(Path(IXN_widget.expt_info.data_dir
+                    / IXN_widget.expt_info.timepoints[0]).glob(name_stub+str(1+1)+'*'))
     IXN_widget.current_names = [] # Used for retrieving metadata
     for i in np.arange(len(IXN_widget.expt_info.wavelengths)):
         #Remove thumbnail files
@@ -171,7 +173,7 @@ def write_all_stacks(IXN_widget):
                 IXN_widget.ch3_LineEdit.text(),
                 IXN_widget.ch4_LineEdit.text(),
                 ]
-    print(ch_names)
+
     n_files = len(IXN_widget.positions_to_write)
     for n, stub in enumerate(IXN_widget.positions_to_write):
         for i in np.arange(len(IXN_widget.expt_info.wavelengths)):
