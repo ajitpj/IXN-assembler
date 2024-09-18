@@ -58,14 +58,38 @@ def retrieveIXNInfo(data_path: Path):
 
     wells = sorted(list(set(wells)))
     positions = sorted(list(set(positions)))
+    # This stores the 'w*' suffix in file names
     wavelengths = sorted(list(set(wavelengths)))
+
+    # Read channel filter cube for each image
+    # Also save a text file with the relevant metadata
+    relevant_keys = ['spatial-calibration-x', 
+                     'camera-binning-x', 
+                     '_MagNA_', '_MagSetting_',
+                     'Exposure Time', '_IllumSetting_', 
+                     'ImageXpress Micro Filter Cube',
+                     'Lumencor Intensity']
+    channel_names = []
+    for wavelength in wavelengths:
+        templist = [filename for filename in file_list if wavelength in filename][0]
+        metadata = retrieveMetaData(data_dir / timepoints[0] / templist)
+        channel_names.append(metadata['ImageXpress Micro Filter Cube'])
+
+        #write file
+        name = date + '_' + wavelength + '_metadata.txt'
+        txtfile = data_dir / name
+        with open(txtfile, 'w') as txt:
+            for key in relevant_keys:
+                txt.write(key + ':' + str(metadata[key]) + '\n')
+        print(f'Metadata file for {txtfile} written!')
+
 
     # Create the expt. info data class
     IXNInfo = exptInfo(data_dir, name, date,
                        wells, positions,
                        wavelengths, timepoints,
                        imwidth, imheight)
-
+    IXNInfo.channel_names = channel_names
     return IXNInfo
 
 def select_dir(IXN_widget):
@@ -80,6 +104,14 @@ def select_dir(IXN_widget):
 
     # retrieve expt info and assign it to the ui
     IXN_widget.expt_info = retrieveIXNInfo(IXN_widget.IXN_folder_path)
+
+    # retrieve the metadata to read the filters used for each wavelength
+    lineedit_dict = {2 : IXN_widget.ch2_LineEdit,
+                     3 : IXN_widget.ch3_LineEdit,
+                     4 : IXN_widget.ch4_LineEdit}
+    # first channel is always phase
+    for i, channel_name in enumerate(IXN_widget.expt_info.channel_names[1::]):
+        lineedit_dict[i+2].setText(channel_name)
 
     for well in IXN_widget.expt_info.wells:
         IXN_widget.well_selector.addItem(well)
@@ -124,7 +156,7 @@ def loadPositiongivenWell(IXN_widget):
     return
 
 def add_to_writelist(IXN_widget):
-    print(IXN_widget.progress_bar.__dir__())
+
     IXN_widget.display_write_list.append(IXN_widget.expt_info.current_name_stub)
     IXN_widget.positions_to_write = IXN_widget.display_write_list.toPlainText().split("\n")
     return
@@ -169,11 +201,16 @@ def write_all_stacks(IXN_widget):
     return
 
 
-def retrieveMetaData(IXN_widget):
-    # The interesting setttings start from lines 55-75
-    metadata = str(tiff.TiffFile(IXN_widget.expt_info.filepath).metaseries_metadata).split(',')[55:75]
-    formatted = ''
-    for line in metadata:
-        formatted = formatted+line+'\n'
+def retrieveMetaData(path: Path):
+    # The relevant data is a dictionary within the metadata dictionary called "PlaneInfo"
+    metadata = tiff.TiffFile(path).metaseries_metadata['PlaneInfo']
+    relevant_keys = ['spatial-calibration-x', 
+                     'camera-binning-x', 
+                     '_MagNA_', '_MagSetting_',
+                     'Exposure Time', '_IllumSetting_', 
+                     'ImageXpress Micro Filter Cube',
+                     'Lumencor Intensity']
+    
+    
 
-    return formatted
+    return metadata
