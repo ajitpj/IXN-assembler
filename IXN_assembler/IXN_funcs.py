@@ -74,7 +74,7 @@ def retrieveIXNInfo(data_path: Path):
         metadata = retrieveMetaData(data_dir / timepoints[0] / templist)
         channel_names.append(metadata['ImageXpress Micro Filter Cube'])
 
-        #write file
+        #write a text file with the metadata for reference
         metadataname = date + '_' + wavelength + '_metadata.txt'
         txtfile = data_dir / metadataname
         with open(txtfile, 'w') as txt:
@@ -107,7 +107,7 @@ def select_dir(IXN_widget):
     lineedit_dict = {2 : IXN_widget.ch2_LineEdit,
                      3 : IXN_widget.ch3_LineEdit,
                      4 : IXN_widget.ch4_LineEdit}
-    # first channel is always phase
+    # first channel is always phase; start with the second
     for i, channel_name in enumerate(IXN_widget.expt_info.channel_names[1::]):
         lineedit_dict[i+2].setText(channel_name)
 
@@ -134,13 +134,7 @@ def loadPositiongivenWell(IXN_widget):
     name_stub = "_".join([IXN_widget.expt_info.name, well, pos, 'w'])
     IXN_widget.expt_info.current_name_stub = name_stub
     remove_napari_layers(IXN_widget) # remove old layers
-    print(name_stub+str(1+1)+'*')
-    print(Path(IXN_widget.expt_info.data_dir
-                    / IXN_widget.expt_info.timepoints[0]))
-    print(IXN_widget.expt_info.timepoints[0])
-
-    print(Path(IXN_widget.expt_info.data_dir
-                    / IXN_widget.expt_info.timepoints[0]).glob(name_stub+str(1+1)+'*'))
+    
     IXN_widget.current_names = [] # Used for retrieving metadata
     for i in np.arange(len(IXN_widget.expt_info.wavelengths)):
         #Remove thumbnail files
@@ -188,14 +182,13 @@ def write_all_stacks(IXN_widget):
                 # Create a list of files excluding the thumb files
                 allfiles = IXN_widget.expt_info.data_dir.glob('**/'+stub+str(i+1)+'*')
                 nonthumbs = [file for file in allfiles if "thumb" not in file.name.casefold()]
-                # I am so clever (after googling a bit)
+                # Sort the filenames in order of their parent directory time stamp number
                 sorted_nonthumbs = sorted(nonthumbs, key=lambda x: int(x.parent.name.split("_")[-1]))
                 for k, f in enumerate(sorted_nonthumbs):
                     im_array[k,:,:] = tiff.imread(f)
-                print(f'Finished reading position {i+1} out of {n_files}...')
 
                 tiff.imwrite(file_path, im_array)
-                # print(f'Finished writing position {i+1} out of {n_files}...')
+                print(f'Finished writing position {i+1} out of {n_files}...')
                 progress = int(100*(n+1)/(n_files))
                 IXN_widget.progress_bar.setValue(progress)
             else:
