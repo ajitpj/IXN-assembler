@@ -1,7 +1,7 @@
 from __future__ import annotations
 from napari.viewer import Viewer
 from qtpy import QtWidgets
-import IXN_assembler.subwidgets as subwidgets # type: ignore
+import IXN_assembler.subwidgets as subwidgets
 from IXN_assembler import IXN_funcs
 
 class IXNWidget(QtWidgets.QScrollArea):
@@ -21,9 +21,8 @@ class IXNWidget(QtWidgets.QScrollArea):
         self.positions_to_write = []
         # We will need to viewer for various callbacks
         self.viewer = napari_viewer
-
         # Let the scroll area automatically resize the widget
-        self.setWidgetResizable(True)  # noqa: FBT003
+        self.setWidgetResizable(True) 
 
         self._main_layout = QtWidgets.QVBoxLayout() # main layout - outline
         self._main_widget = QtWidgets.QWidget() 
@@ -37,10 +36,9 @@ class IXNWidget(QtWidgets.QScrollArea):
         self._add_channel_lineEdits_widgets()
         self._add_well_position_comboBox_widgets()
         self._add_progressbar_widgets()
-        # self._add_file_widgets()
-        # self._add_config_widgets()
         self._main_layout.addWidget(self._tabs, stretch=0)
 
+        # Make widgets into GUI attributes
         for name, widget in self._widgets.items():
             self.__setattr__(
                 name, 

@@ -23,7 +23,13 @@ class exptInfo:
     timepoints: list
     imwidth:  int = 2048
     imheight: int = 2048
+    
 
+def retrieveMetaData(path: Path):
+    # The relevant data is a dictionary within the metadata dictionary called "PlaneInfo"
+    metadata = tiff.TiffFile(path).metaseries_metadata['PlaneInfo']
+
+    return metadata
 
 def retrieveIXNInfo(data_path: Path):
     data_dir = Path(data_path)
@@ -61,13 +67,6 @@ def retrieveIXNInfo(data_path: Path):
     wavelengths = sorted(list(set(wavelengths)))
 
     # Read channel filter cube for each image
-    # Also save a text file with the relevant metadata
-    relevant_keys = ['spatial-calibration-x', 
-                     'camera-binning-x', 
-                     '_MagNA_', '_MagSetting_',
-                     'Exposure Time', '_IllumSetting_', 
-                     'ImageXpress Micro Filter Cube',
-                     'Lumencor Intensity']
     channel_names = []
     for wavelength in wavelengths:
         templist = [filename for filename in file_list if wavelength in filename][0]
@@ -75,10 +74,19 @@ def retrieveIXNInfo(data_path: Path):
         channel_names.append(metadata['ImageXpress Micro Filter Cube'])
 
         #write a text file with the metadata for reference
+        # Also save a text file with the relevant metadata
+        metadata_keys = ['spatial-calibration-x', 
+                         'camera-binning-x', 
+                         '_MagNA_', '_MagSetting_',
+                         'Exposure Time', '_IllumSetting_', 
+                         'ImageXpress Micro Filter Cube',
+                         'Lumencor Intensity']
+        
         metadataname = date + '_' + wavelength + '_metadata.txt'
         txtfile = data_dir / metadataname
+        
         with open(txtfile, 'w') as txt:
-            for key in relevant_keys:
+            for key in metadata_keys:
                 txt.write(key + ':' + str(metadata[key]) + '\n')
         print(f'Metadata file for {txtfile} written!')
 
@@ -89,6 +97,7 @@ def retrieveIXNInfo(data_path: Path):
                        wavelengths, timepoints,
                        imwidth, imheight)
     IXNInfo.channel_names = channel_names
+    
     return IXNInfo
 
 def select_dir(IXN_widget):
@@ -194,18 +203,3 @@ def write_all_stacks(IXN_widget):
             else:
                 print(f'A file named {save_name} already exists!')
     return
-
-
-def retrieveMetaData(path: Path):
-    # The relevant data is a dictionary within the metadata dictionary called "PlaneInfo"
-    metadata = tiff.TiffFile(path).metaseries_metadata['PlaneInfo']
-    relevant_keys = ['spatial-calibration-x', 
-                     'camera-binning-x', 
-                     '_MagNA_', '_MagSetting_',
-                     'Exposure Time', '_IllumSetting_', 
-                     'ImageXpress Micro Filter Cube',
-                     'Lumencor Intensity']
-    
-    
-
-    return metadata
