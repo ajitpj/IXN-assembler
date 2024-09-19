@@ -188,7 +188,7 @@ def write_all_stacks(IXN_widget):
                     im_array[k,:,:] = tiff.imread(f)
 
                 tiff.imwrite(file_path, im_array)
-                print(f'Finished writing position {i+1} out of {n_files}...')
+                print(f'Finished writing position {n+1} out of {n_files}...')
                 progress = int(100*(n+1)/(n_files))
                 IXN_widget.progress_bar.setValue(progress)
             else:
