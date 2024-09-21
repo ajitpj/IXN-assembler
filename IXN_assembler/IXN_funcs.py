@@ -6,7 +6,7 @@ import tifffile as tiff
 import numpy as np
 from qtpy import QtWidgets
 import napari
-import napari.utils.notifications
+import napari.utils.notifications as notifications
 from typing import Optional, List, Dict
 from dataclasses import dataclass
 from IXN_assembler import ui  # type:ignore
@@ -38,66 +38,73 @@ def retrieveIXNInfo(data_path: Path):
         if 'TimePoint' in dir.name:
             timepoints.append(dir.name)
 
-    timepoints = sorted(timepoints)
-
-    # Files in the first timepoint directory
-    file_list = [f.name for f in os.scandir(data_dir / timepoints[0])
-                    if 'thumb' not in f.name.casefold()]
-
-    # Retrieve the date
-    img = tiff.TiffFile(data_dir / timepoints[0] / file_list[0])
-    date = img.pages[0].tags['DateTime'].value.split(' ')[0]
-    imwidth  = img.pages[0].tags['ImageWidth'].value
-    imheight = img.pages[0].tags['ImageLength'].value
-    # Infer expt. details from the first directory
-    wells = []
-    positions = []
-    wavelengths = []
-    for file in file_list:
-        splits = file.split('_')
-        name = splits[0]
-        wells.append(splits[1])
-        positions.append(splits[2])
-        wavelengths.append(splits[3][0:2])
-
-    wells = sorted(list(set(wells)))
-    positions = sorted(list(set(positions)))
-    # This stores the 'w*' suffix in file names
-    wavelengths = sorted(list(set(wavelengths)))
-
-    # Read channel filter cube for each image
-    channel_names = []
-    for wavelength in wavelengths:
-        templist = [filename for filename in file_list if wavelength in filename][0]
-        metadata = retrieveMetaData(data_dir / timepoints[0] / templist)
-        channel_names.append(metadata['ImageXpress Micro Filter Cube'])
-
-        #write a text file with the metadata for reference
-        # Also save a text file with the relevant metadata
-        metadata_keys = ['spatial-calibration-x', 
-                         'camera-binning-x', 
-                         '_MagNA_', '_MagSetting_',
-                         'Exposure Time', '_IllumSetting_', 
-                         'ImageXpress Micro Filter Cube',
-                         'Lumencor Intensity']
+    if not timepoints:
         
-        metadataname = date + '_' + wavelength + '_metadata.txt'
-        txtfile = data_dir / metadataname
-        
-        with open(txtfile, 'w') as txt:
-            for key in metadata_keys:
-                txt.write(key + ':' + str(metadata[key]) + '\n')
-        print(f'Metadata file for {txtfile} written!')
-
-
-    # Create the expt. info data class
-    IXNInfo = exptInfo(data_dir, name, date,
-                       wells, positions,
-                       wavelengths, timepoints,
-                       imwidth, imheight)
-    IXNInfo.channel_names = channel_names
+        return
     
-    return IXNInfo
+    else:
+        timepoints = sorted(timepoints)
+
+        # Files in the first timepoint directory
+        file_list = [f.name for f in os.scandir(data_dir / timepoints[0])
+                        if 'thumb' not in f.name.casefold()]
+
+        # Retrieve the date
+        img = tiff.TiffFile(data_dir / timepoints[0] / file_list[0])
+        date = img.pages[0].tags['DateTime'].value.split(' ')[0]
+        imwidth  = img.pages[0].tags['ImageWidth'].value
+        imheight = img.pages[0].tags['ImageLength'].value
+        # Infer expt. details from the first directory
+        wells = []
+        positions = []
+        wavelengths = []
+        for file in file_list:
+            splits = file.split('_')
+            name = splits[0]
+            wells.append(splits[1])
+            positions.append(splits[2])
+            wavelengths.append(splits[3][0:2])
+
+        wells = sorted(list(set(wells)))
+        positions = sorted(list(set(positions)))
+        # This stores the 'w*' suffix in file names
+        wavelengths = sorted(list(set(wavelengths)))
+
+        # Read channel filter cube for each image
+        channel_names = []
+        for wavelength in wavelengths:
+            templist = [filename for filename in file_list if wavelength in filename][0]
+            metadata = retrieveMetaData(data_dir / timepoints[0] / templist)
+            channel_names.append(metadata['ImageXpress Micro Filter Cube'])
+
+            #write a text file with the metadata for reference
+            # Also save a text file with the relevant metadata
+            metadata_keys = ['spatial-calibration-x', 
+                            'camera-binning-x', 
+                            '_MagNA_', '_MagSetting_',
+                            'Exposure Time', '_IllumSetting_', 
+                            'ImageXpress Micro Filter Cube',
+                            'Lumencor Intensity']
+            
+            metadataname = date + '_' + wavelength + '_metadata.txt'
+            txtfile = data_dir / metadataname
+            
+            with open(txtfile, 'w') as txt:
+                for key in metadata_keys:
+                    txt.write(key + ':' + str(metadata[key]) + '\n')
+            print(f'Metadata file for {txtfile} written!')
+            notifications.show_info(f'Metadata file for {txtfile} written!')
+
+
+        # Create the expt. info data class
+        IXNInfo = exptInfo(data_dir, name, date,
+                        wells, positions,
+                        wavelengths, timepoints,
+                        imwidth, imheight)
+        IXNInfo.channel_names = channel_names
+        return IXNInfo
+
+
 
 def select_dir(IXN_widget):
     '''
@@ -111,21 +118,24 @@ def select_dir(IXN_widget):
     # retrieve expt info and assign it to the ui
     IXN_widget.expt_info = retrieveIXNInfo(Path(dir_path))
 
-    # retrieve the metadata to read the filters used for each wavelength
-    lineedit_dict = {2 : IXN_widget.ch2_LineEdit,
-                     3 : IXN_widget.ch3_LineEdit,
-                     4 : IXN_widget.ch4_LineEdit}
-    # first channel is always phase; start with the second
-    for i, channel_name in enumerate(IXN_widget.expt_info.channel_names[1::]):
-        lineedit_dict[i+2].setText(channel_name)
+    if IXN_widget.expt_info:
+        # retrieve the metadata to read the filters used for each wavelength
+        lineedit_dict = {2 : IXN_widget.ch2_LineEdit,
+                        3 : IXN_widget.ch3_LineEdit,
+                        4 : IXN_widget.ch4_LineEdit}
+        # first channel is always phase; start with the second
+        for i, channel_name in enumerate(IXN_widget.expt_info.channel_names[1::]):
+            lineedit_dict[i+2].setText(channel_name)
 
-    for well in IXN_widget.expt_info.wells:
-        IXN_widget.well_selector.addItem(well)
-    
-    for position in IXN_widget.expt_info.positions:
-        IXN_widget.posi_selector.addItem(position)
+        for well in IXN_widget.expt_info.wells:
+            IXN_widget.well_selector.addItem(well)
+        
+        for position in IXN_widget.expt_info.positions:
+            IXN_widget.posi_selector.addItem(position)
+    else:
+        notifications.show_error(f'Not an IXN datafolder!')
+        return
 
-    return
 
 def remove_napari_layers(IXN_widget):
     # Remove previous layers
