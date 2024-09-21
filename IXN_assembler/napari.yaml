@@ -1,10 +1,13 @@
 name: IXN-assembler
+display_name: IXN-assembler
+schema_version: 0.1.0
+
 contributions:
   commands:
-    - id: IXN-assembler.assmeble_stacks
+    - id: IXN-assembler.assemble_stacks
       title: Assemble image stacks
       python_name: IXN_assembler.main:create_IXN_widget
+
   widgets:
-    - command: IXN-assembler.assmeble_stacks  # note, same as command.id above
+    - command: IXN-assembler.assemble_stacks  # note, same as command.id above
       display_name: Assemble IXN stacks
-      # autogenerate: true

@@ -1,6 +1,5 @@
 
 import re
-import cv2
 import os
 from pathlib import Path
 import tifffile as tiff
