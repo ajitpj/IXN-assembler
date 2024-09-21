@@ -9,5 +9,5 @@ contributions:
       python_name: IXN_assembler.main:create_IXN_widget
 
   widgets:
-    - command: IXN-assembler.assemble_stacks  # note, same as command.id above
+    - command: IXN-assembler.assemble_stacks
       display_name: Assemble IXN stacks
