@@ -84,7 +84,14 @@ def retrieveIXNInfo(data_path: Path):
                             '_MagNA_', '_MagSetting_',
                             'Exposure Time', '_IllumSetting_', 
                             'ImageXpress Micro Filter Cube',
-                            'Lumencor Intensity']
+                            'Lumencor Intensity',
+                            ]
+            #Find the interval between
+            file_list1 = [f.name for f in os.scandir(data_dir / timepoints[1])
+                        if 'thumb' not in f.name.casefold()]
+            img1 = tiff.TiffFile(data_dir / timepoints[1] / file_list1[0])
+            time_0 = int(img.pages[0].tags['DateTime'].value.split(':')[1])
+            time_1 = int(img1.pages[0].tags['DateTime'].value.split(':')[1])
             
             metadataname = date + '_' + wavelength + '_metadata.txt'
             txtfile = data_dir / metadataname
@@ -92,6 +99,7 @@ def retrieveIXNInfo(data_path: Path):
             with open(txtfile, 'w') as txt:
                 for key in metadata_keys:
                     txt.write(key + ':' + str(metadata[key]) + '\n')
+                txt.write('Time interval' + ':' + str(time_1 - time_0) + ' min')
             print(f'Metadata file for {txtfile} written!')
             notifications.show_info(f'Metadata file for {txtfile} written!')
 
