@@ -34,6 +34,7 @@ class IXNWidget(QtWidgets.QScrollArea):
         self._widgets = {}
         self._add_expt_selector_widgets()
         self._add_channel_lineEdits_widgets()
+        self._add_channel_selection_widgets()
         self._add_well_position_comboBox_widgets()
         self._add_progressbar_widgets()
         self._main_layout.addWidget(self._tabs, stretch=0)
@@ -103,35 +104,16 @@ class IXNWidget(QtWidgets.QScrollArea):
         self._main_layout.addWidget(widget_holder, stretch = 0)
 
 
-    # def _add_file_widgets(self):
-    #     "Adds file_widgets which are the output of sub_widgets.create_file_selector_widgets. The aforementioned function outputs -> dict[str: QtWidgets.QWidget]"
+    def _add_channel_selection_widgets(self):
+        channel_selection_widgets = subwidgets.create_channel_selection_widget()
+        self._widgets.update({key: value[1] for key, value in channel_selection_widgets.items()})
+        
+        widget_holder = QtWidgets.QGroupBox('Make stacks from...')
+        
+        layout = QtWidgets.QFormLayout()
+        for label, widget in channel_selection_widgets.values():
+            label_widget = QtWidgets.QLabel(label)
+            layout.addRow(label_widget, widget) 
 
-    #     file_widgets = subwidgets.create_file_selector_widgets()
-    #     self._widgets.update(file_widgets)
-
-    #     layout = QtWidgets.QFormLayout()
-    #     for widget in file_widgets.values():
-    #         layout.addRow(widget)
-
-    #     tab = QtWidgets.QWidget()
-    #     tab.setLayout(layout)
-    #     self._tabs.addTab(tab, "FileIO")
-
-
-    # def _add_config_widgets(self):
-    #     "Adds config_widgets which are the output of sub_widgets.create_config_widgets. The aforementioned function outputs -> dict[str: tuple[str, QtWidgets.QWidget]]"
-
-    #     config_widgets = subwidgets.create_config_widgets()
-    #     self._widgets.update(
-    #     {key: value[1] for key, value in config_widgets.items()}
-    #     )
-
-    #     layout = QtWidgets.QFormLayout()
-    #     for label, widget in config_widgets.values():
-    #         label_widget = QtWidgets.QLabel(label)
-    #         label_widget.setToolTip(widget.toolTip())
-    #         layout.addRow(label_widget, widget)
-
-    #     tab = QtWidgets.QWidget()
-    #     tab.setLayout(layout)
-    #     self._tabs.addTab(tab, "Configs")
+        widget_holder.setLayout(layout)
+        self._main_layout.addWidget(widget_holder, stretch = 0)

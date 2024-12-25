@@ -129,11 +129,14 @@ def select_dir(IXN_widget):
     if IXN_widget.expt_info:
         # retrieve the metadata to read the filters used for each wavelength
         lineedit_dict = {2 : IXN_widget.ch2_LineEdit,
-                        3 : IXN_widget.ch3_LineEdit,
-                        4 : IXN_widget.ch4_LineEdit}
+                         3 : IXN_widget.ch3_LineEdit,
+                         4 : IXN_widget.ch4_LineEdit}
         # first channel is always phase; start with the second
+        IXN_widget.ch1_chkbox.setEnabled(True)
         for i, channel_name in enumerate(IXN_widget.expt_info.channel_names[1::]):
             lineedit_dict[i+2].setText(channel_name)
+            IXN_widget.__dict__['ch'+str(i+2)+'_chkbox'].setText(channel_name)
+            IXN_widget.__dict__['ch'+str(i+2)+'_chkbox'].setEnabled(True)
 
         for well in IXN_widget.expt_info.wells:
             IXN_widget.well_selector.addItem(well)
@@ -186,13 +189,24 @@ def add_to_writelist(IXN_widget):
 
 def write_all_stacks(IXN_widget):
     save_path = IXN_widget.expt_info.data_dir
-
+    
     # This dictionary will save the files for each wavelength
-    ch_names = [IXN_widget.ch1_LineEdit.text(),
-                IXN_widget.ch2_LineEdit.text(),
-                IXN_widget.ch3_LineEdit.text(),
-                IXN_widget.ch4_LineEdit.text(),
-                ]
+    # ch_names = [IXN_widget.ch1_LineEdit.text(),
+    #             IXN_widget.ch2_LineEdit.text(),
+    #             IXN_widget.ch3_LineEdit.text(),
+    #             IXN_widget.ch4_LineEdit.text(),
+    #             ]
+    
+    # Added 20241224: create flags for user selected channels
+    ch_names = []
+    if IXN_widget.ch1_chkbox.text():
+        ch_names.append(IXN_widget.ch1_chkbox.text())
+    if IXN_widget.ch2_chkbox.text():
+        ch_names.append(IXN_widget.ch2_chkbox.text())
+    if IXN_widget.ch3_chkbox.text():
+        ch_names.append(IXN_widget.ch3_chkbox.text())
+    if IXN_widget.ch4_chkbox.text():
+        ch_names.append(IXN_widget.ch4_chkbox.text())
 
     n_files = len(IXN_widget.positions_to_write)
     for n, stub in enumerate(IXN_widget.positions_to_write):

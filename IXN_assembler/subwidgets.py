@@ -1,3 +1,4 @@
+
 from __future__ import annotations
 from qtpy import QtWidgets
 
@@ -72,6 +73,35 @@ def create_progressbar_widget() ->dict[str, QtWidgets.QWidget]:
     widgets = {"progress_bar":  progress_bar}
 
     return widgets
+
+def create_channel_selection_widget() -> dict[str, QtWidgets.QWidget]:
+
+    ch1_chkbox = QtWidgets.QCheckBox()
+    ch1_chkbox.setText('Phase')
+    ch2_chkbox = QtWidgets.QCheckBox()
+    # ch2_chkbox.setText('GFP')
+    ch3_chkbox = QtWidgets.QCheckBox()
+    # ch3_chkbox.setText('Texas Red')
+    ch4_chkbox = QtWidgets.QCheckBox()
+    # ch4_chkbox.setText('Cy5')
+
+    ch1_chkbox.setChecked(False)
+    ch2_chkbox.setChecked(False)
+    ch3_chkbox.setChecked(False)
+    ch4_chkbox.setChecked(False)
+
+    ch1_chkbox.setEnabled(False)
+    ch2_chkbox.setEnabled(False)
+    ch3_chkbox.setEnabled(False)
+    ch4_chkbox.setEnabled(False)
+
+    widgets = {"ch1_chkbox" : ('save', ch1_chkbox),
+               "ch2_chkbox" : ('save', ch2_chkbox),
+               "ch3_chkbox" : ('save', ch3_chkbox),
+               "ch4_chkbox" : ('save', ch4_chkbox)}
+
+    return widgets
+
 # def create_config_widgets() -> dict[str, tuple[str, QtWidgets.QWidget]]:
 #     '''
 #     Creates Configuration Widgets 
