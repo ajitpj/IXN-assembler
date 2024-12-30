@@ -199,13 +199,13 @@ def write_all_stacks(IXN_widget):
     
     # Added 20241224: create flags for user selected channels
     ch_names = []
-    if IXN_widget.ch1_chkbox.text():
+    if IXN_widget.ch1_chkbox.isChecked():
         ch_names.append(IXN_widget.ch1_chkbox.text())
-    if IXN_widget.ch2_chkbox.text():
+    if IXN_widget.ch2_chkbox.isChecked():
         ch_names.append(IXN_widget.ch2_chkbox.text())
-    if IXN_widget.ch3_chkbox.text():
+    if IXN_widget.ch3_chkbox.isChecked():
         ch_names.append(IXN_widget.ch3_chkbox.text())
-    if IXN_widget.ch4_chkbox.text():
+    if IXN_widget.ch4_chkbox.isChecked():
         ch_names.append(IXN_widget.ch4_chkbox.text())
 
     n_files = len(IXN_widget.positions_to_write)
