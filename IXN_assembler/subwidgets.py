@@ -77,7 +77,7 @@ def create_progressbar_widget() ->dict[str, QtWidgets.QWidget]:
 def create_channel_selection_widget() -> dict[str, QtWidgets.QWidget]:
 
     ch1_chkbox = QtWidgets.QCheckBox()
-    ch1_chkbox.setText('Phase')
+    ch1_chkbox.setText('phs')
     ch2_chkbox = QtWidgets.QCheckBox()
     # ch2_chkbox.setText('GFP')
     ch3_chkbox = QtWidgets.QCheckBox()
