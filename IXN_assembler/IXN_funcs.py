@@ -1,5 +1,5 @@
 
-import re
+# import re
 import os
 from pathlib import Path
 import tifffile as tiff
@@ -77,32 +77,6 @@ def retrieveIXNInfo(data_path: Path):
             metadata = retrieveMetaData(data_dir / timepoints[0] / templist)
             channel_names.append(metadata['ImageXpress Micro Filter Cube'])
 
-            #write a text file with the metadata for reference
-            # Also save a text file with the relevant metadata
-            metadata_keys = ['spatial-calibration-x', 
-                            'camera-binning-x', 
-                            '_MagNA_', '_MagSetting_',
-                            'Exposure Time', '_IllumSetting_', 
-                            'ImageXpress Micro Filter Cube',
-                            'Lumencor Intensity',
-                            ]
-            #Find the interval between
-            file_list1 = [f.name for f in os.scandir(data_dir / timepoints[1])
-                        if 'thumb' not in f.name.casefold()]
-            img1 = tiff.TiffFile(data_dir / timepoints[1] / file_list1[0])
-            time_0 = int(img.pages[0].tags['DateTime'].value.split(':')[1])
-            time_1 = int(img1.pages[0].tags['DateTime'].value.split(':')[1])
-            
-            metadataname = date + '_' + wavelength + '_metadata.txt'
-            txtfile = data_dir / metadataname
-            
-            with open(txtfile, 'w') as txt:
-                for key in metadata_keys:
-                    txt.write(key + ':' + str(metadata[key]) + '\n')
-                txt.write('Time interval' + ':' + str(time_1 - time_0) + ' min')
-            print(f'Metadata file for {txtfile} written!')
-            notifications.show_info(f'Metadata file for {txtfile} written!')
-
 
         # Create the expt. info data class
         IXNInfo = exptInfo(data_dir, name, date,
@@ -114,6 +88,43 @@ def retrieveIXNInfo(data_path: Path):
 
 
 
+def write_metadata_files(IXN_info):
+    """Write per-channel metadata text files to the experiment directory."""
+    data_dir = IXN_info.data_dir
+    timepoints = IXN_info.timepoints
+
+    file_list = [f.name for f in os.scandir(data_dir / timepoints[0])
+                 if 'thumb' not in f.name.casefold()]
+    file_list1 = [f.name for f in os.scandir(data_dir / timepoints[1])
+                  if 'thumb' not in f.name.casefold()]
+
+    img0 = tiff.TiffFile(data_dir / timepoints[0] / file_list[0])
+    img1 = tiff.TiffFile(data_dir / timepoints[1] / file_list1[0])
+    time_0 = int(img0.pages[0].tags['DateTime'].value.split(':')[1])
+    time_1 = int(img1.pages[0].tags['DateTime'].value.split(':')[1])
+
+    metadata_keys = ['spatial-calibration-x',
+                     'camera-binning-x',
+                     '_MagNA_', '_MagSetting_',
+                     'Exposure Time', '_IllumSetting_',
+                     'ImageXpress Micro Filter Cube',
+                     'Lumencor Intensity',
+                     ]
+
+    for wavelength in IXN_info.wavelengths:
+        tempfile = [f for f in file_list if wavelength in f][0]
+        metadata = retrieveMetaData(data_dir / timepoints[0] / tempfile)
+
+        metadataname = IXN_info.date + '_' + wavelength + '_metadata.txt'
+        txtfile = data_dir / metadataname
+        with open(txtfile, 'w') as txt:
+            for key in metadata_keys:
+                txt.write(key + ':' + str(metadata[key]) + '\n')
+            txt.write('Time interval' + ':' + str(time_1 - time_0) + ' min')
+        print(f'Metadata file for {txtfile} written!')
+        notifications.show_info(f'Metadata file for {txtfile} written!')
+
+
 def select_dir(IXN_widget):
     '''
     Returns one user selected Path
@@ -121,6 +132,8 @@ def select_dir(IXN_widget):
     # import retrieveIXNInfo
 
     dir_path = QtWidgets.QFileDialog.getExistingDirectory()
+    if not dir_path:
+        return
     IXN_widget.path_selector_button.setToolTip(dir_path)
 
     # retrieve expt info and assign it to the ui
@@ -182,12 +195,15 @@ def loadPositiongivenWell(IXN_widget):
 
 def add_to_writelist(IXN_widget):
 
-    IXN_widget.display_write_list.append(IXN_widget.expt_info.current_name_stub)
-    IXN_widget.positions_to_write = IXN_widget.display_write_list.toPlainText().split("\n")
+    IXN_widget.display_write_list.appendPlainText(IXN_widget.expt_info.current_name_stub)
+    IXN_widget.positions_to_write = [
+        p for p in IXN_widget.display_write_list.toPlainText().split("\n") if p
+    ]
     return
 
 
 def write_all_stacks(IXN_widget):
+    write_metadata_files(IXN_widget.expt_info)
     save_path = IXN_widget.expt_info.data_dir
     
     # This dictionary will save the files for each wavelength
@@ -198,21 +214,22 @@ def write_all_stacks(IXN_widget):
     #             ]
     
     # Added 20241224: create flags for user selected channels
-    ch_names = []
-    if IXN_widget.ch1_chkbox.isChecked():
-        ch_names.append(IXN_widget.ch1_chkbox.text())
-    if IXN_widget.ch2_chkbox.isChecked():
-        ch_names.append(IXN_widget.ch2_chkbox.text())
-    if IXN_widget.ch3_chkbox.isChecked():
-        ch_names.append(IXN_widget.ch3_chkbox.text())
-    if IXN_widget.ch4_chkbox.isChecked():
-        ch_names.append(IXN_widget.ch4_chkbox.text())
+    # Build list of (wavelength_index, channel_name) for checked channels only,
+    # preserving the correct 1-based wavelength index (w1=0, w2=1, ...) for each.
+    ch_checkboxes = [IXN_widget.ch1_chkbox, IXN_widget.ch2_chkbox,
+                     IXN_widget.ch3_chkbox, IXN_widget.ch4_chkbox]
+    ch_selections = [
+        (i, chkbox.text())
+        for i, chkbox in enumerate(ch_checkboxes)
+        if chkbox.isChecked() and i < len(IXN_widget.expt_info.wavelengths)
+    ]
 
-    n_files = len(IXN_widget.positions_to_write)
-    for n, stub in enumerate(IXN_widget.positions_to_write):
-        for i in np.arange(len(IXN_widget.expt_info.wavelengths)):
+    total_ops = len(IXN_widget.positions_to_write) * len(ch_selections)
+    completed = 0
+    for stub in IXN_widget.positions_to_write:
+        for wave_idx, ch_name in ch_selections:
             # Add date prior to the name.
-            save_name = IXN_widget.expt_info.date+"_"+stub[:-1]+ch_names[i]+'.tif'
+            save_name = IXN_widget.expt_info.date+"_"+stub[:-1]+ch_name+'.tif'
             file_path = save_path / save_name
             if not file_path.exists():
                 im_array = np.zeros((len(IXN_widget.expt_info.timepoints),
@@ -220,7 +237,7 @@ def write_all_stacks(IXN_widget):
                                     IXN_widget.expt_info.imheight), dtype='uint16')
 
                 # Create a list of files excluding the thumb files
-                allfiles = IXN_widget.expt_info.data_dir.glob('**/'+stub+str(i+1)+'*')
+                allfiles = IXN_widget.expt_info.data_dir.glob('**/'+stub+str(wave_idx+1)+'*')
                 nonthumbs = [file for file in allfiles if "thumb" not in file.name.casefold()]
                 # Sort the filenames in order of their parent directory time stamp number
                 sorted_nonthumbs = sorted(nonthumbs, key=lambda x: int(x.parent.name.split("_")[-1]))
@@ -228,9 +245,10 @@ def write_all_stacks(IXN_widget):
                     im_array[k,:,:] = tiff.imread(f)
 
                 tiff.imwrite(file_path, im_array)
-                print(f'Finished writing position {n+1} out of {n_files}...')
-                progress = int(100*(n+1)/(n_files))
-                IXN_widget.progress_bar.setValue(progress)
+                print(f'Written: {save_name}')
             else:
-                print(f'A file named {save_name} already exists!')
+                print(f'Skipped (already exists): {save_name}')
+
+            completed += 1
+            IXN_widget.progress_bar.setValue(int(100 * completed / total_ops))
     return
