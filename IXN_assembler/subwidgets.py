@@ -36,7 +36,7 @@ def create_comboBox_widgets() -> dict[str, QtWidgets.QWidget]:
     add_wellpos_button.setText('Add to write list')
     add_wellpos_button.setToolTip("Select well+position for writing")
 
-    display_write_list = QtWidgets.QTextEdit()
+    display_write_list = QtWidgets.QPlainTextEdit()
     display_write_list.setToolTip("Positions to be written")
 
     widgets['add_wellpos_button'] = ("", add_wellpos_button)
