@@ -168,6 +168,7 @@ def write_metadata_files(IXN_info):
             else:
                 # round first so a 4.02 min nominal interval reads as '4 min'
                 txt.write(f'Time interval:{round(interval, 1):g} min\n')
+            txt.write(f'Number of timepoints:{len(timepoints)}\n')
         print(f'Metadata file for {txtfile} written!')
         notifications.show_info(f'Metadata file for {txtfile} written!')
 
