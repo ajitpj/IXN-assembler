@@ -1,6 +1,5 @@
 
 # import re
-import os
 from pathlib import Path
 import tifffile as tiff
 import numpy as np
@@ -8,6 +7,7 @@ from qtpy import QtWidgets
 import napari.utils.notifications as notifications
 from typing import Optional
 from dataclasses import dataclass, field
+from IXN_assembler.file_layouts import LAYOUT_LABELS, StackIndex, build_index
 
 METADATA_KEYS = ['spatial-calibration-x',
                  'camera-binning-x',
@@ -30,19 +30,14 @@ class exptInfo:
     imwidth:  int = 2048
     imheight: int = 2048
     channel_names: list = field(default_factory=list)
+    stacks: Optional[StackIndex] = None
+    # 'name_well_pos_w' write-list entry -> (well, position)
+    stub_lookup: dict = field(default_factory=dict)
 
 
-def timepoint_index(timepoint_name: str) -> int:
-    '''TimePoint_10 -> 10. Timepoints must be ordered numerically; sorting the
-    directory names as strings puts TimePoint_10 right after TimePoint_1.'''
-    return int(timepoint_name.split('_')[-1])
-
-
-def list_image_files(directory: Path, pattern: str = '*') -> list:
-    '''Sorted list of IXN image files in a directory, thumbnails excluded.'''
-    return sorted(f for f in Path(directory).glob(pattern)
-                  if f.suffix.casefold() == '.tif'
-                  and 'thumb' not in f.name.casefold())
+def position_stub(name: str, well: str, position: str) -> str:
+    '''Write-list entry for one well/position, e.g. 'pFF1-CycB_A06_s1_w'.'''
+    return '_'.join([name, well, position, 'w'])
 
 
 def retrieveMetaData(path: Path):
@@ -60,32 +55,15 @@ def acquisition_time(path: Path):
     return retrieveMetaData(path)['acquisition-time-local']
 
 
-def time_interval(data_dir: Path, timepoints: list, wavelength: str,
-                  max_pairs: int = 5) -> Optional[float]:
+def time_interval(frames: list, max_pairs: int = 5,
+                  get_time=acquisition_time) -> Optional[float]:
     '''Median interval, in minutes, between consecutive timepoints.
 
+    frames: (timepoint, path) pairs of a single stack, in timepoint order.
     The same well/position/wavelength has to be followed across timepoints:
     one timepoint scans the whole plate over several minutes, so two images
     from different positions are not acquired at the same time.'''
-    if len(timepoints) < 2:
-        return None
-
-    first = [f for f in list_image_files(data_dir / timepoints[0])
-             if f'_{wavelength}' in f.name]
-    if not first:
-        return None
-
-    # 'pFF1-CycB_A06_s1_w1' - the part of the name shared across timepoints.
-    # The rest is a per-image GUID, so the files have to be matched by prefix.
-    name = first[0].name
-    stub = name[:name.index(f'_{wavelength}') + len(wavelength) + 1]
-
-    times = []
-    for timepoint in timepoints[:max_pairs + 1]:
-        matches = list_image_files(data_dir / timepoint, stub + '*')
-        if matches:
-            times.append((timepoint_index(timepoint), acquisition_time(matches[0])))
-
+    times = [(t, get_time(path)) for t, path in frames[:max_pairs + 1]]
     if len(times) < 2:
         return None
 
@@ -96,54 +74,38 @@ def time_interval(data_dir: Path, timepoints: list, wavelength: str,
     return float(np.median(deltas))
 
 
-def retrieveIXNInfo(data_path: Path):
+def retrieveIXNInfo(data_path: Path, layout: str = 'legacy'):
+    '''Index the experiment in data_path, stored in the given file layout
+    (see file_layouts.LAYOUTS). Returns None if no images are found; raises
+    ValueError if the images cannot be grouped into stacks unambiguously.'''
     data_dir = Path(data_path)
 
-    timepoints = [dir.name for dir in os.scandir(data_dir)
-                  if 'TimePoint' in dir.name]
-
-    if not timepoints:
+    stacks = build_index(data_dir, layout)
+    if stacks is None:
         return
 
-    timepoints = sorted(timepoints, key=timepoint_index)
-
-    # Files in the first timepoint directory
-    file_list = list_image_files(data_dir / timepoints[0])
-
-    # Retrieve the date
-    img = tiff.TiffFile(file_list[0])
+    # Retrieve the date and image size from the first image
+    img = tiff.TiffFile(stacks.first_file())
     date = img.pages[0].tags['DateTime'].value.split(' ')[0]
     imwidth  = img.pages[0].tags['ImageWidth'].value
     imheight = img.pages[0].tags['ImageLength'].value
-    # Infer expt. details from the first directory
-    wells = []
-    positions = []
-    wavelengths = []
-    for file in file_list:
-        splits = file.name.split('_')
-        name = splits[0]
-        wells.append(splits[1])
-        positions.append(splits[2])
-        wavelengths.append(splits[3][0:2])
 
-    wells = sorted(set(wells))
-    positions = sorted(set(positions))
-    # This stores the 'w*' suffix in file names
-    wavelengths = sorted(set(wavelengths))
-
-    # Read channel filter cube for each image
+    # Read channel filter cube for each wavelength ('w*' suffix in file names)
     channel_names = [
-        retrieveMetaData([f for f in file_list if f'_{wavelength}' in f.name][0])
+        retrieveMetaData(stacks.first_file(wavelength))
         ['ImageXpress Micro Filter Cube']
-        for wavelength in wavelengths
+        for wavelength in stacks.wavelengths
     ]
 
+    stub_lookup = {position_stub(stacks.name, well, pos): (well, pos)
+                   for well, pos, _ in stacks.stacks}
+
     # Create the expt. info data class
-    return exptInfo(data_dir, name, date,
-                    wells, positions,
-                    wavelengths, timepoints,
+    return exptInfo(data_dir, stacks.name, date,
+                    stacks.wells, stacks.positions,
+                    stacks.wavelengths, stacks.timepoints,
                     imwidth, imheight,
-                    channel_names)
+                    channel_names, stacks, stub_lookup)
 
 
 def write_metadata_files(IXN_info):
@@ -151,12 +113,13 @@ def write_metadata_files(IXN_info):
     data_dir = IXN_info.data_dir
     timepoints = IXN_info.timepoints
 
-    file_list = list_image_files(data_dir / timepoints[0])
-
     for wavelength in IXN_info.wavelengths:
-        tempfile = [f for f in file_list if f'_{wavelength}' in f.name][0]
-        metadata = retrieveMetaData(tempfile)
-        interval = time_interval(data_dir, timepoints, wavelength)
+        metadata = retrieveMetaData(IXN_info.stacks.first_file(wavelength))
+        # follow the first stack recorded at this wavelength
+        frames = next(frames for (_, _, w), frames
+                      in sorted(IXN_info.stacks.stacks.items())
+                      if w == wavelength)
+        interval = time_interval(frames)
 
         metadataname = IXN_info.date + '_' + wavelength + '_metadata.txt'
         txtfile = data_dir / metadataname
@@ -182,12 +145,62 @@ def select_dir(IXN_widget):
     dir_path = QtWidgets.QFileDialog.getExistingDirectory()
     if not dir_path:
         return
+    IXN_widget.data_dir = Path(dir_path)
     IXN_widget.path_selector_button.setToolTip(dir_path)
+    load_dir(IXN_widget)
+
+
+def selected_layout(IXN_widget) -> str:
+    '''File layout picked with the layout checkboxes.'''
+    for layout, chkbox in IXN_widget.layout_checkboxes.items():
+        if chkbox.isChecked():
+            return layout
+    return 'legacy'
+
+
+def reset_selectors(IXN_widget):
+    '''Empty the well/position menus, the write list and the channel names
+    left over from a previously loaded folder.'''
+    for i in (2, 3, 4):
+        IXN_widget.__dict__['ch'+str(i)+'_LineEdit'].clear()
+        chkbox = IXN_widget.__dict__['ch'+str(i)+'_chkbox']
+        chkbox.setText('')
+        chkbox.setChecked(False)
+        chkbox.setEnabled(False)
+    for selector in (IXN_widget.well_selector, IXN_widget.posi_selector):
+        selector.blockSignals(True)
+        selector.clear()
+        selector.blockSignals(False)
+    IXN_widget.display_write_list.clear()
+    IXN_widget.positions_to_write = []
+
+
+def layout_changed(IXN_widget, checked: bool):
+    '''Re-read the selected folder when the user switches file layout.'''
+    if checked and IXN_widget.data_dir is not None:
+        load_dir(IXN_widget)
+
+
+def load_dir(IXN_widget):
+    '''Index IXN_widget.data_dir with the selected layout and fill the GUI.'''
+    layout = selected_layout(IXN_widget)
+    reset_selectors(IXN_widget)
+    remove_napari_layers(IXN_widget)
 
     # retrieve expt info and assign it to the ui
-    IXN_widget.expt_info = retrieveIXNInfo(Path(dir_path))
+    try:
+        IXN_widget.expt_info = retrieveIXNInfo(IXN_widget.data_dir, layout)
+    except ValueError as err:
+        IXN_widget.expt_info = None
+        notifications.show_error(str(err))
+        return
 
     if IXN_widget.expt_info:
+        info = IXN_widget.expt_info
+        notifications.show_info(
+            f'{info.name}: {len(info.wells)} wells, {len(info.positions)} '
+            f'positions, {len(info.wavelengths)} wavelengths, '
+            f'{len(info.timepoints)} timepoints')
         # retrieve the metadata to read the filters used for each wavelength
         lineedit_dict = {2 : IXN_widget.ch2_LineEdit,
                          3 : IXN_widget.ch3_LineEdit,
@@ -205,7 +218,8 @@ def select_dir(IXN_widget):
         for position in IXN_widget.expt_info.positions:
             IXN_widget.posi_selector.addItem(position)
     else:
-        notifications.show_error(f'Not an IXN datafolder!')
+        notifications.show_error(
+            f'No images found for the "{LAYOUT_LABELS[layout]}" layout!')
         return
 
 
@@ -218,22 +232,23 @@ def remove_napari_layers(IXN_widget):
     return
 
 def loadPositiongivenWell(IXN_widget):
+    if not IXN_widget.expt_info:
+        return
     well = IXN_widget.well_selector.currentText()
     pos  = IXN_widget.posi_selector.currentText()
 
-    name_stub = "_".join([IXN_widget.expt_info.name, well, pos, 'w'])
+    name_stub = position_stub(IXN_widget.expt_info.name, well, pos)
     IXN_widget.expt_info.current_name_stub = name_stub
     remove_napari_layers(IXN_widget) # remove old layers
     
     IXN_widget.current_names = [] # Used for retrieving metadata
-    for i in np.arange(len(IXN_widget.expt_info.wavelengths)):
-        nonthumbs = list_image_files(
-            IXN_widget.expt_info.data_dir / IXN_widget.expt_info.timepoints[0],
-            name_stub + str(i+1) + '*')
+    for wavelength in IXN_widget.expt_info.wavelengths:
+        # first timepoint of this position, if it was imaged at all
+        files = IXN_widget.expt_info.stacks.files(well, pos, wavelength)[:1]
 
-        for f in nonthumbs:
+        for f in files:
             IXN_widget.viewer.add_image(tiff.imread(f),
-                            name = name_stub+str(i+1),
+                            name = name_stub+wavelength[1:],
                             colormap='gray', opacity=0)
             IXN_widget.current_names.append(f)
            # Disable visibility of w1 to 1
@@ -241,6 +256,8 @@ def loadPositiongivenWell(IXN_widget):
     return
 
 def add_to_writelist(IXN_widget):
+    if not IXN_widget.expt_info:
+        return
 
     IXN_widget.display_write_list.appendPlainText(IXN_widget.expt_info.current_name_stub)
     IXN_widget.positions_to_write = [
@@ -297,12 +314,12 @@ def write_all_stacks(IXN_widget):
     #             ]
     
     # Added 20241224: create flags for user selected channels
-    # Build list of (wavelength_index, channel_name) for checked channels only,
-    # preserving the correct 1-based wavelength index (w1=0, w2=1, ...) for each.
+    # Build list of (wavelength, channel_name) for checked channels only;
+    # checkbox i is labelled with the channel of the i-th wavelength.
     ch_checkboxes = [IXN_widget.ch1_chkbox, IXN_widget.ch2_chkbox,
                      IXN_widget.ch3_chkbox, IXN_widget.ch4_chkbox]
     ch_selections = [
-        (i, chkbox.text())
+        (IXN_widget.expt_info.wavelengths[i], chkbox.text())
         for i, chkbox in enumerate(ch_checkboxes)
         if chkbox.isChecked() and i < len(IXN_widget.expt_info.wavelengths)
     ]
@@ -319,17 +336,17 @@ def write_all_stacks(IXN_widget):
     set_progress(IXN_widget, 0)
     try:
         for stub in IXN_widget.positions_to_write:
-            for wave_idx, ch_name in ch_selections:
+            # the write list is editable, so it may name a position that
+            # does not exist in this experiment
+            well, pos = IXN_widget.expt_info.stub_lookup.get(stub, (None, None))
+            for wavelength, ch_name in ch_selections:
                 # Add date prior to the name.
                 save_name = IXN_widget.expt_info.date+"_"+stub[:-1]+ch_name+'.tif'
                 file_path = save_path / save_name
                 if not file_path.exists():
-                    # Create a list of files excluding the thumb files, sorted in
-                    # order of their parent directory time stamp number
-                    nonthumbs = list_image_files(IXN_widget.expt_info.data_dir,
-                                                 '**/'+stub+str(wave_idx+1)+'*')
-                    sorted_nonthumbs = sorted(nonthumbs,
-                                              key=lambda x: timepoint_index(x.parent.name))
+                    # Files of this stack, thumbnails excluded, in timepoint order
+                    sorted_nonthumbs = IXN_widget.expt_info.stacks.files(
+                        well, pos, wavelength)
                     if not sorted_nonthumbs:
                         notifications.show_error(f'No images found for {save_name}.')
                         print(f'Skipped (no images found): {save_name}')

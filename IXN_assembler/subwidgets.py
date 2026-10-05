@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 from qtpy import QtWidgets
+from IXN_assembler.file_layouts import LAYOUTS, LAYOUT_LABELS
 
 
 def create_expt_selector_widgets() -> dict[str,  QtWidgets.QWidget]:
@@ -21,6 +22,30 @@ def create_expt_selector_widgets() -> dict[str,  QtWidgets.QWidget]:
     )
 
     widgets = {'path_selector_button' :  path_selector_button}
+
+    return widgets
+
+def create_layout_selector_widgets() -> dict[str, QtWidgets.QWidget]:
+    '''Creates one checkbox per file layout; only one can be checked at a time.'''
+    tooltips = {
+        'legacy': 'TimePoint_N folders with files named\n'
+                  '<name>_<well>_<site>_w<N><GUID>.tif',
+        'time_folders': 'One folder per timepoint (text + number, e.g. Timepoint_7)\n'
+                        'with files named <name>_c##_r##_sc##_sr##_w##[_z##].tif',
+        'single_folder': 'All images in one folder (up to two levels down)\n'
+                         'named <name>_c##_r##_sc##_sr##_w##_t###_z##.tif',
+    }
+    # an exclusive group makes the checkboxes behave like radio buttons
+    layout_group = QtWidgets.QButtonGroup()
+    layout_group.setExclusive(True)
+
+    widgets = {'layout_group': layout_group}
+    for layout in LAYOUTS:
+        chkbox = QtWidgets.QCheckBox(LAYOUT_LABELS[layout])
+        chkbox.setToolTip(tooltips[layout])
+        layout_group.addButton(chkbox)
+        widgets[layout + '_chkbox'] = chkbox
+    widgets['legacy_chkbox'].setChecked(True)
 
     return widgets
 

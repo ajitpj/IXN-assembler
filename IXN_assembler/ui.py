@@ -19,6 +19,9 @@ class IXNWidget(QtWidgets.QScrollArea):
         super().__init__()
         # This will contain the list of positions to write
         self.positions_to_write = []
+        # Selected data folder and what was found in it
+        self.data_dir = None
+        self.expt_info = None
         # We will need to viewer for various callbacks
         self.viewer = napari_viewer
         # Let the scroll area automatically resize the widget
@@ -32,6 +35,7 @@ class IXNWidget(QtWidgets.QScrollArea):
 
         # Create widgets and add to layout
         self._widgets = {}
+        self._add_layout_selector_widgets()
         self._add_expt_selector_widgets()
         self._add_channel_lineEdits_widgets()
         self._add_channel_selection_widgets()
@@ -57,6 +61,22 @@ class IXNWidget(QtWidgets.QScrollArea):
         layout = QtWidgets.QFormLayout()
         for widget in expt_selector_widgets.values():
             layout.addRow(widget)
+
+        widget_holder.setLayout(layout)
+        self._main_layout.addWidget(widget_holder, stretch = 0)
+
+    def _add_layout_selector_widgets(self):
+        '''Checkboxes choosing how the image files are organized on disk.'''
+        layout_widgets = subwidgets.create_layout_selector_widgets()
+        self._widgets.update(layout_widgets)
+        self.layout_checkboxes = {
+            layout: layout_widgets[layout + '_chkbox']
+            for layout in subwidgets.LAYOUTS
+        }
+        widget_holder = QtWidgets.QGroupBox('File organization')
+        layout = QtWidgets.QVBoxLayout()
+        for chkbox in self.layout_checkboxes.values():
+            layout.addWidget(chkbox)
 
         widget_holder.setLayout(layout)
         self._main_layout.addWidget(widget_holder, stretch = 0)

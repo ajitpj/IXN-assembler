@@ -19,6 +19,8 @@ def create_IXN_widget() -> ui.IXNWidget:
     )
 
     IXN_widget.path_selector_button.clicked.connect(lambda: IXN_funcs.select_dir(IXN_widget))
+    for chkbox in IXN_widget.layout_checkboxes.values():
+        chkbox.toggled.connect(lambda checked: IXN_funcs.layout_changed(IXN_widget, checked))
     IXN_widget.posi_selector.currentIndexChanged.connect(lambda: IXN_funcs.loadPositiongivenWell(IXN_widget))
     IXN_widget.well_selector.currentIndexChanged.connect(lambda: IXN_funcs.loadPositiongivenWell(IXN_widget))
     IXN_widget.add_wellpos_button.clicked.connect(lambda: IXN_funcs.add_to_writelist(IXN_widget))
