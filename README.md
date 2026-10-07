@@ -13,7 +13,7 @@ Ticking a different layout re-reads the selected folder.
 
 #File organization
 - **Legacy**: select the folder containing the `TimePoint_*` folders. Files are named `<name>_<well>_<site>_w<N><GUID>.tif`.
-- **Organized by time**: one folder per timepoint, named text followed by the timepoint number (e.g. `Timepoint_7`, `T007`), directly in the selected folder or one level below it. Files are named `<name>_c<col>_r<row>_sc<site col>_sr<site row>_w<N>[_z<N>].tif`; the timepoint is taken from the folder name. (Not yet validated against real data.)
+- **Organized by time**: one folder per timepoint, named text followed by the timepoint number (e.g. `t007`, `Timepoint_7`), directly in the selected folder or one level below it. Files are named `<name>_c<col>_r<row>_sc<site col>_sr<site row>_w<N>[_z<N>].tif`; the timepoint is taken from the folder name.
 - **Single-folder storage**: every image in one folder, which may be the selected folder or up to two levels below it. Files are named `<name>_c<col>_r<row>_sc<site col>_sr<site row>_w<N>_t<N>_z<N>.tif`.
 
 In the new naming scheme `c10_r05` is well E10 and the position is shown as e.g. `sc02sr05`. If more than one z-plane is present, each plane becomes its own stack (`sc02sr05z02`).
@@ -23,4 +23,4 @@ From the repository root, with the img-env environment:
 
     python -m unittest discover -s tests -v
 
-The parsing tests build trees of empty placeholder files, so they need no image data. `TestRealData` also checks the 20261002 (single-folder) and 20250612 (legacy) experiments on the lab share when it is mounted; set `IXN_SINGLE_FOLDER_DATA` / `IXN_LEGACY_DATA` to validate other folders. To validate the first organized-by-time dataset, set `IXN_TIME_FOLDERS_DATA` to its folder.
+The parsing tests build trees of empty placeholder files, so they need no image data. `TestRealData` also checks the 20261002 (single-folder), 20261005 (organized-by-time) and 20250612 (legacy) experiments on the lab share when it is mounted; set `IXN_SINGLE_FOLDER_DATA` / `IXN_TIME_FOLDERS_DATA` / `IXN_LEGACY_DATA` to validate other folders.

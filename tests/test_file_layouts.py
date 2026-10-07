@@ -297,8 +297,9 @@ LEGACY_DATA = Path(os.environ.get(
     'IXN_LEGACY_DATA',
     '/Volumes/SharedHITSX/cdb-Joglekar-Lab-GL/Anish_Virdi/CycB_dynamics/ixn/'
     '20250612-cycb-noc-gsk/20250612/2025-06-13/20448'))
-# no organized-by-time dataset exists yet; set this to validate the first one
-TIME_FOLDERS_DATA = Path(os.environ.get('IXN_TIME_FOLDERS_DATA', '/nonexistent'))
+TIME_FOLDERS_DATA = Path(os.environ.get(
+    'IXN_TIME_FOLDERS_DATA',
+    '/Volumes/SharedHITSX/cdb-Joglekar-Lab-GL/Anish_Virdi/CycB_dynamics/ixn/20261005'))
 
 
 class TestRealData(unittest.TestCase):
@@ -335,7 +336,7 @@ class TestRealData(unittest.TestCase):
             key=lambda x: int(x.parent.name.split('_')[-1]))
         self.assertEqual(ix.files(well, pos, w), original)
 
-    @unittest.skipUnless(TIME_FOLDERS_DATA.is_dir(), 'set IXN_TIME_FOLDERS_DATA')
+    @unittest.skipUnless(TIME_FOLDERS_DATA.is_dir(), f'{TIME_FOLDERS_DATA} not available')
     def test_time_folders(self):
         ix = build_index(TIME_FOLDERS_DATA, 'time_folders')
         self.assertIsNotNone(ix)
@@ -343,6 +344,16 @@ class TestRealData(unittest.TestCase):
             self.assertEqual([f.timepoint for f in frames], ix.timepoints, key)
             # one folder per frame, in increasing timepoint order
             self.assertEqual(len({f.path.parent for f in frames}), len(frames), key)
+        if TIME_FOLDERS_DATA.name == '20261005':
+            # RPE1-U2OS-noc/t001 .. t297
+            self.assertEqual(ix.name, 'RPE1-U2OS-noc')
+            self.assertEqual(len(ix.stacks), 144)
+            self.assertEqual(ix.timepoints, list(range(1, 298)))
+            self.assertEqual(ix.wavelengths, ['w01', 'w02'])
+            for frames in ix.stacks.values():
+                for f in frames:
+                    self.assertEqual(f.path.parent.name, f't{f.timepoint:03d}')
+                    self.assertIn(f'_t{f.timepoint:03d}_', f.path.name)
         print(f'\n{TIME_FOLDERS_DATA}: {len(ix.stacks)} stacks, wells {ix.wells}, '
               f'positions {ix.positions}, wavelengths {ix.wavelengths}, '
               f'{len(ix.timepoints)} timepoints')

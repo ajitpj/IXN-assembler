@@ -8,7 +8,7 @@ legacy          MetaXpress 'TimePoint_N' folders, one per timepoint, holding
 
 time_folders    One folder per timepoint, named <text><digits> (the digits are
                 the timepoint), holding files with the new naming scheme below.
-                e.g.  Timepoint_7/Plate_c10_r05_sc02_sr05_w01_z01.tif
+                e.g.  t007/Plate_c10_r05_sc02_sr05_w01_t007_z01.tif
 
 single_folder   Every image of the experiment in one folder, which may sit one
                 or two levels below the selected folder. The timepoint comes
