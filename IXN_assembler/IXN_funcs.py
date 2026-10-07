@@ -1,5 +1,5 @@
 
-# import re
+import re
 from pathlib import Path
 import tifffile as tiff
 import numpy as np
@@ -7,7 +7,9 @@ from qtpy import QtWidgets
 import napari.utils.notifications as notifications
 from typing import Optional
 from dataclasses import dataclass, field
-from IXN_assembler.file_layouts import LAYOUT_LABELS, StackIndex, build_index
+from IXN_assembler.file_layouts import (DOWNSTREAM_CHANNELS, LAYOUT_LABELS,
+                                        StackIndex, build_index,
+                                        downstream_incompatible, natural_key)
 
 METADATA_KEYS = ['spatial-calibration-x',
                  'camera-binning-x',
@@ -83,6 +85,15 @@ def retrieveIXNInfo(data_path: Path, layout: str = 'legacy'):
     stacks = build_index(data_dir, layout)
     if stacks is None:
         return
+    if layout != 'legacy':
+        # legacy names already hold MetaXpress's own site numbers
+        renames = {old: new for old, new in metadata_site_names(stacks).items()
+                   if old != new}
+        if renames:
+            stacks.rename_positions(renames)
+            notifications.show_info(
+                'Site numbers taken from the image metadata: ' + ', '.join(
+                    f'{old}->{new}' for old, new in sorted(renames.items())))
 
     # Retrieve the date and image size from the first image
     img = tiff.TiffFile(stacks.first_file())
@@ -106,6 +117,27 @@ def retrieveIXNInfo(data_path: Path, layout: str = 'legacy'):
                     stacks.wavelengths, stacks.timepoints,
                     imwidth, imheight,
                     channel_names, stacks, stub_lookup)
+
+
+def metadata_site_names(stacks: StackIndex) -> dict:
+    '''{inferred position: position named from the stage label}.
+
+    New-scheme file names carry only a site's place on the site grid, and
+    file_layouts numbers the sites it finds. That is only right when every
+    site of the acquisition is in the folder; the stage label MetaXpress
+    writes, e.g. 'E10 : Site 5', is right regardless. One image is read per
+    position (positions are plate-wide: s5 is the same grid place in every
+    well). Positions without a readable label are left out.'''
+    names = {}
+    for (_, pos, _), frames in sorted(stacks.stacks.items()):
+        if pos in names:
+            continue
+        label = retrieveMetaData(frames[0].path).get('stage-label', '')
+        m = re.search(r'Site\s*(\d+)', str(label))
+        if m:
+            # keep a _z## suffix from multi-plane data
+            names[pos] = f's{int(m.group(1))}' + pos[len(pos.split('_')[0]):]
+    return names
 
 
 def write_metadata_files(IXN_info):
@@ -201,6 +233,13 @@ def load_dir(IXN_widget):
             f'{info.name}: {len(info.wells)} wells, {len(info.positions)} '
             f'positions, {len(info.wavelengths)} wavelengths, '
             f'{len(info.timepoints)} timepoints')
+        # stacks cellapp-analysis would not find, or would mislabel
+        unparsable = sorted({f'{well}_{pos}' for well, pos in info.stub_lookup.values()
+                             if downstream_incompatible(well, pos)}, key=natural_key)
+        if unparsable:
+            notifications.show_warning(
+                f'cellapp-analysis cannot parse these well/site names: '
+                f'{", ".join(unparsable[:5])}' + (' ...' if len(unparsable) > 5 else ''))
         # retrieve the metadata to read the filters used for each wavelength
         lineedit_dict = {2 : IXN_widget.ch2_LineEdit,
                          3 : IXN_widget.ch3_LineEdit,
@@ -323,6 +362,19 @@ def write_all_stacks(IXN_widget):
         for i, chkbox in enumerate(ch_checkboxes)
         if chkbox.isChecked() and i < len(IXN_widget.expt_info.wavelengths)
     ]
+
+    # cellapp-analysis finds stacks by these channel names in the file name
+    for _, ch_name in ch_selections:
+        if ch_name not in DOWNSTREAM_CHANNELS:
+            notifications.show_warning(
+                f'Channel "{ch_name}" is not one cellapp-analysis recognizes '
+                f'({", ".join(DOWNSTREAM_CHANNELS)}).')
+    names = [ch_name for _, ch_name in ch_selections]
+    if len(set(names)) < len(names):
+        notifications.show_error(
+            f'Two selected channels share a name ({", ".join(names)}); their '
+            f'stacks would get the same file name.')
+        return
 
     total_ops = len(IXN_widget.positions_to_write) * len(ch_selections)
     if not total_ops:

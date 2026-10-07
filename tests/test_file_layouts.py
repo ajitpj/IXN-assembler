@@ -12,13 +12,15 @@ legacy check, IXN_LEGACY_DATA) at other datasets to validate them too.
 '''
 import os
 import random
+import re
 import tempfile
 import unittest
 from pathlib import Path
 
 from IXN_assembler.file_layouts import (
-    build_index, find_time_dirs, index_legacy, index_single_folder,
-    index_time_folders, parse_legacy_filename, parse_new_filename, well_label)
+    build_index, downstream_incompatible, find_time_dirs, index_legacy,
+    index_single_folder, index_time_folders, parse_legacy_filename,
+    parse_new_filename, well_label)
 
 PLATE = 'Mia-Panc-Huh Noco-GSK'   # real plate name: has spaces and dashes
 
@@ -50,7 +52,8 @@ class TestFilenameParsing(unittest.TestCase):
 
     def test_new_scheme_example(self):
         f = parse_new_filename(new_name(10, 5, 2, 5, 1, t=74))
-        self.assertEqual(f, {'name': PLATE, 'well': 'E10', 'position': 'sc02sr05',
+        self.assertEqual(f, {'name': PLATE, 'well': 'E10', 'position': None,
+                             'site_grid': (5, 2),
                              'wavelength': 'w01', 'timepoint': 74, 'z': 1})
 
     def test_new_scheme_without_t_or_z(self):
@@ -74,8 +77,8 @@ class TestFilenameParsing(unittest.TestCase):
 
     def test_unpadded_numbers(self):
         f = parse_new_filename('P_c5_r3_sc1_sr2_w1_t9_z1.tif')
-        self.assertEqual((f['well'], f['position'], f['timepoint']),
-                         ('C05', 'sc1sr2', 9))
+        self.assertEqual((f['well'], f['site_grid'], f['timepoint']),
+                         ('C05', (2, 1), 9))
 
     def test_legacy_scheme(self):
         f = parse_legacy_filename('20250612_A10_s1_w18942BF42-9FCF-40D3-937C-2D51B516160F.tif')
@@ -108,11 +111,11 @@ class TestSingleFolder(TmpDirTestCase):
         ix = index_single_folder(self.root)
         self.assertEqual(ix.name, PLATE)
         self.assertEqual(ix.wells, ['A11', 'E10'])
-        self.assertEqual(ix.positions, ['sc02sr05', 'sc07sr06'])
+        self.assertEqual(ix.positions, ['s1', 's2'])
         self.assertEqual(ix.wavelengths, ['w01'])
         self.assertEqual(ix.timepoints, list(range(1, 134)))
         self.assertEqual(len(ix.stacks), 4)
-        files = ix.files('E10', 'sc02sr05', 'w01')
+        files = ix.files('E10', 's1', 'w01')
         self.assertEqual([f.name for f in files],
                          [new_name(10, 5, 2, 5, 1, t) for t in range(1, 134)])
 
@@ -121,7 +124,7 @@ class TestSingleFolder(TmpDirTestCase):
         for t in (100, 9, 10, 1):
             touch(self.root / f'P_c01_r01_sc01_sr01_w01_t{t}_z01.tif')
         ix = index_single_folder(self.root)
-        self.assertEqual([f.timepoint for f in ix.stacks[('A01', 'sc01sr01', 'w01')]],
+        self.assertEqual([f.timepoint for f in ix.stacks[('A01', 's1', 'w01')]],
                          [1, 9, 10, 100])
 
     def test_found_one_or_two_levels_down(self):
@@ -149,7 +152,7 @@ class TestSingleFolder(TmpDirTestCase):
         self.make(self.root, timepoints=[1, 2, 3, 4])
         (self.root / new_name(10, 5, 2, 5, 1, 3)).unlink()
         ix = index_single_folder(self.root)
-        self.assertEqual([f.timepoint for f in ix.stacks[('E10', 'sc02sr05', 'w01')]],
+        self.assertEqual([f.timepoint for f in ix.stacks[('E10', 's1', 'w01')]],
                          [1, 2, 4])
         self.assertEqual(ix.timepoints, [1, 2, 3, 4])
 
@@ -158,7 +161,7 @@ class TestSingleFolder(TmpDirTestCase):
         touch(self.root / 'P_c01_r01_sc01_sr01_w01_t001_z01_thumb.tif')
         touch(self.root / 'P_c01_r01_sc01_sr01_w01_z01.tif')   # no timepoint
         touch(self.root / 'platemap.xlsx')
-        touch(self.root / '20261002_Plate_E10_sc02sr05_phs.tif')  # an output stack
+        touch(self.root / '20261002_Plate_E10_s1_phs.tif')  # an output stack
         ix = index_single_folder(self.root)
         self.assertEqual(len(ix.stacks), 4)
 
@@ -167,8 +170,44 @@ class TestSingleFolder(TmpDirTestCase):
             for t in (1, 2):
                 touch(self.root / new_name(1, 1, 1, 1, 1, t, z=z))
         ix = index_single_folder(self.root)
-        self.assertEqual(ix.positions, ['sc01sr01z01', 'sc01sr01z02'])
-        self.assertEqual(len(ix.files('A01', 'sc01sr01z02', 'w01')), 2)
+        self.assertEqual(ix.positions, ['s1_z01', 's1_z02'])
+        self.assertEqual(len(ix.files('A01', 's1_z02', 'w01')), 2)
+
+    def test_site_numbers_follow_the_site_grid_row_by_row(self):
+        # the 20261002 site pattern; the stage labels there read
+        # sc02_sr05 -> 'Site 5' and sc05_sr08 -> 'Site 9'
+        sites = [(2, 2), (2, 3), (2, 5), (2, 7), (4, 3), (5, 5), (5, 8), (7, 3), (7, 6)]
+        self.make(self.root, timepoints=[1], sites=sites, wells=((10, 5),))
+        ix = index_single_folder(self.root)
+        self.assertEqual(ix.positions, [f's{n}' for n in range(1, 10)])
+        site_of = {f.path.name.split('_sc')[1][:7]: pos
+                   for (_, pos, _), frames in ix.stacks.items() for f in frames}
+        self.assertEqual(site_of['02_sr02'], 's1')
+        self.assertEqual(site_of['02_sr05'], 's5')
+        self.assertEqual(site_of['05_sr08'], 's9')
+        self.assertEqual(site_of['07_sr06'], 's7')
+
+    def test_subset_of_sites_is_numbered_by_what_is_present(self):
+        # with only 2 of the 9 sites, the names alone give s1, s2; the GUI
+        # then renames them from the stage labels (IXN_funcs.metadata_site_names)
+        self.make(self.root, timepoints=[1], sites=[(2, 5), (7, 6)], wells=((10, 5),))
+        ix = index_single_folder(self.root)
+        self.assertEqual(ix.positions, ['s1', 's2'])
+        ix.rename_positions({'s1': 's5', 's2': 's7'})
+        self.assertEqual(ix.positions, ['s5', 's7'])
+        self.assertEqual(ix.files('E10', 's5', 'w01')[0].name, new_name(10, 5, 2, 5, 1, 1))
+
+    def test_rename_positions_refuses_to_merge_stacks(self):
+        self.make(self.root, timepoints=[1], sites=[(2, 5), (7, 6)], wells=((10, 5),))
+        ix = index_single_folder(self.root)
+        with self.assertRaises(ValueError):
+            ix.rename_positions({'s1': 's2'})
+
+    def test_positions_sort_numerically(self):
+        sites = [(sc, 1) for sc in range(1, 12)]
+        self.make(self.root, timepoints=[1], sites=sites, wells=((1, 1),))
+        self.assertEqual(index_single_folder(self.root).positions,
+                         [f's{n}' for n in range(1, 12)])
 
     def test_images_in_two_folders_is_an_error(self):
         self.make(self.root / 'a', timepoints=[1])
@@ -186,6 +225,52 @@ class TestSingleFolder(TmpDirTestCase):
         self.assertIsNone(index_single_folder(self.root))
 
 
+class TestDownstreamNames(TmpDirTestCase):
+    '''Stack names must parse with the regexes cellapp-analysis uses.'''
+
+    # copied from cellapp-analysis pipeline.py and cellaap_analysis.py
+    PIPELINE_STUB_RE = re.compile(
+        r"(?P<well>[A-H](?:0[1-9]|1[0-2]|[1-9]))_s(?P<site>\d{1,2})")
+    ANALYSIS_STUB_RE = re.compile(r"[A-H]([1-9]|[0][1-9]|[1][0-2])_s(\d{2}|\d{1})")
+    CHANNEL_RE = re.compile(r"GFP|Texas Red|Cy5|phs")
+
+    def stack_name(self, ix, well, pos, channel, date='20261002'):
+        # as IXN_funcs.write_all_stacks names them
+        return f'{date}_{ix.name}_{well}_{pos}_{channel}.tif'
+
+    def test_new_scheme_stack_names_parse(self):
+        for t in (1, 2):
+            for sc, sr in ((2, 5), (7, 6)):
+                touch(self.root / new_name(10, 5, sc, sr, 1, t))
+        ix = index_single_folder(self.root)
+        for well, pos, _ in ix.stacks:
+            for channel in ('phs', 'GFP', 'Texas Red'):
+                name = self.stack_name(ix, well, pos, channel)
+                m = self.PIPELINE_STUB_RE.search(name)
+                self.assertEqual((m['well'], m['site']), (well, pos[1:]), name)
+                stub = self.ANALYSIS_STUB_RE.search(name).group()
+                self.assertEqual(stub, f'{well}_{pos}')
+                # cellaap_analysis.files: stub + '_' in the name, then a channel
+                self.assertIn(stub + '_', name)
+                self.assertEqual(self.CHANNEL_RE.search(name).group(), channel)
+                # pipeline/create_correction_maps take the channel from the stem
+                self.assertEqual(Path(name).stem.split('_')[-1], channel)
+                # cellaap_analysis.expt_name
+                self.assertEqual(name.split(stub)[0], f'20261002_{ix.name}_')
+                self.assertFalse(downstream_incompatible(well, pos))
+
+    def test_site_one_is_not_confused_with_site_ten(self):
+        names = ['20261002_P_A06_s1_phs.tif', '20261002_P_A06_s10_phs.tif']
+        self.assertEqual([n for n in names if 'A06_s1' + '_' in n], [names[0]])
+
+    def test_incompatible_names_are_flagged(self):
+        self.assertFalse(downstream_incompatible('E10', 's5'))
+        self.assertFalse(downstream_incompatible('H12', 's99'))
+        self.assertTrue(downstream_incompatible('I13', 's1'))     # 384-well plate
+        self.assertTrue(downstream_incompatible('A01', 's100'))
+        self.assertTrue(downstream_incompatible('A01', 'sc02sr05'))
+
+
 class TestTimeFolders(TmpDirTestCase):
 
     def make(self, base: Path, timepoints, prefix='Timepoint_', with_t=False,
@@ -199,7 +284,7 @@ class TestTimeFolders(TmpDirTestCase):
         self.make(self.root, timepoints=range(1, 13))
         ix = index_time_folders(self.root)
         self.assertEqual(ix.timepoints, list(range(1, 13)))
-        files = ix.files('E10', 'sc02sr05', 'w01')
+        files = ix.files('E10', 's1', 'w01')
         self.assertEqual([f.parent.name for f in files],
                          [f'Timepoint_{t}' for t in range(1, 13)])
 
@@ -304,6 +389,15 @@ TIME_FOLDERS_DATA = Path(os.environ.get(
 
 class TestRealData(unittest.TestCase):
 
+    def assert_sites_match_stage_labels(self, ix):
+        '''s<N> inferred from the file names == 'Site N' in each stack's
+        stage-label metadata, e.g. 'E10 : Site 5'.'''
+        import tifffile
+        for (well, pos, w), frames in ix.stacks.items():
+            with tifffile.TiffFile(frames[0].path) as tf:
+                label = tf.metaseries_metadata['PlaneInfo']['stage-label']
+            self.assertEqual(label, f'{well} : Site {pos[1:]}', frames[0].path.name)
+
     @unittest.skipUnless(SINGLE_FOLDER_DATA.is_dir(), f'{SINGLE_FOLDER_DATA} not available')
     def test_20261002_single_folder(self):
         ix = build_index(SINGLE_FOLDER_DATA, 'single_folder')
@@ -321,6 +415,8 @@ class TestRealData(unittest.TestCase):
             self.assertEqual(len(ix.positions), 9)
             self.assertEqual(ix.wells, ['A10', 'A11', 'B10', 'C10', 'D10',
                                         'E10', 'F10', 'G10', 'H10'])
+            self.assertEqual(ix.positions, [f's{n}' for n in range(1, 10)])
+        self.assert_sites_match_stage_labels(ix)
 
     @unittest.skipUnless(LEGACY_DATA.is_dir(), f'{LEGACY_DATA} not available')
     def test_legacy_matches_original_glob(self):
@@ -350,10 +446,12 @@ class TestRealData(unittest.TestCase):
             self.assertEqual(len(ix.stacks), 144)
             self.assertEqual(ix.timepoints, list(range(1, 298)))
             self.assertEqual(ix.wavelengths, ['w01', 'w02'])
+            self.assertEqual(ix.positions, [f's{n}' for n in range(1, 9)])
             for frames in ix.stacks.values():
                 for f in frames:
                     self.assertEqual(f.path.parent.name, f't{f.timepoint:03d}')
                     self.assertIn(f'_t{f.timepoint:03d}_', f.path.name)
+        self.assert_sites_match_stage_labels(ix)
         print(f'\n{TIME_FOLDERS_DATA}: {len(ix.stacks)} stacks, wells {ix.wells}, '
               f'positions {ix.positions}, wavelengths {ix.wavelengths}, '
               f'{len(ix.timepoints)} timepoints')

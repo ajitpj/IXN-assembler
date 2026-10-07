@@ -16,7 +16,10 @@ Ticking a different layout re-reads the selected folder.
 - **Organized by time**: one folder per timepoint, named text followed by the timepoint number (e.g. `t007`, `Timepoint_7`), directly in the selected folder or one level below it. Files are named `<name>_c<col>_r<row>_sc<site col>_sr<site row>_w<N>[_z<N>].tif`; the timepoint is taken from the folder name.
 - **Single-folder storage**: every image in one folder, which may be the selected folder or up to two levels below it. Files are named `<name>_c<col>_r<row>_sc<site col>_sr<site row>_w<N>_t<N>_z<N>.tif`.
 
-In the new naming scheme `c10_r05` is well E10 and the position is shown as e.g. `sc02sr05`. If more than one z-plane is present, each plane becomes its own stack (`sc02sr05z02`).
+In the new naming scheme `c10_r05` is well E10. Positions are named `s<N>` with MetaXpress's site number, read from each image's stage label (e.g. `E10 : Site 5` for `sc02_sr05`). If the label is missing, the sites in the folder are numbered row by row (by `sr`, then `sc`), which gives the same numbers when every site of the acquisition is present. If more than one z-plane is present, each plane becomes its own stack (`s5_z02`).
+
+#Output names
+Stacks are written to the selected folder as `<date>_<name>_<well>_s<site>_<channel>.tif`, e.g. `20261002_Mia-Panc-Huh Noco-GSK_E10_s5_phs.tif`, next to the `<date>_<wavelength>_metadata.txt` files. This is the form cellapp-analysis (`pipeline.py`, `cellaap_analysis.py`) expects: a `<well>_s<site>_` stub for a 96-well plate well (A-H, 1-12) and site 1-99, and a channel name of `phs`, `GFP`, `Texas Red` or `Cy5`. The plug-in warns when a well, site or channel name falls outside that.
 
 #Tests
 From the repository root, with the img-env environment:

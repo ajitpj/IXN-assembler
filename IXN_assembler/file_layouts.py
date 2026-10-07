@@ -17,7 +17,16 @@ single_folder   Every image of the experiment in one folder, which may sit one
 
 New naming scheme:  <name>_c<col>_r<row>_sc<site col>_sr<site row>_w<N>[_t<N>][_z<N>].tif
   c10_r05 is well E10 (r = plate row, c = plate column); sc/sr place the site
-  within the well.
+  on the grid of possible sites within the well.
+
+Positions are named s<N> in every layout, as MetaXpress does, because the
+downstream analysis (cellapp-analysis: pipeline.STUB_RE) finds stacks by a
+<well>_s<site> stub. For the new scheme N is worked out from the names: the
+sites acquired are numbered row by row across the site grid (by sr, then sc),
+which reproduces the 'Site N' in the images' stage-label metadata as long as
+every site of the acquisition is present. The GUI replaces these with the
+stage-label numbers (IXN_funcs.metadata_site_names), which stay right when
+only some of the sites are in the folder.
 
 Each indexer returns a StackIndex mapping (well, position, wavelength) to the
 frames of that stack in timepoint order. Nothing here opens an image, so the
@@ -56,6 +65,24 @@ LEGACY_NAME_RE = re.compile(
 # 'TimePoint_12' -> ('TimePoint_', '12'); a name with no text prefix is not one
 TIME_DIR_RE = re.compile(r'^(?P<prefix>.*\D)(?P<timepoint>\d+)$')
 
+# The position stub cellapp-analysis keys everything off (pipeline.STUB_RE,
+# cellaap_analysis.files): a 96-well plate well, then _s and a 1-2 digit site.
+DOWNSTREAM_STUB_RE = re.compile(r'^[A-H](?:0[1-9]|1[0-2]|[1-9])_s\d{1,2}$')
+# Channel names the downstream analysis recognizes in stack file names
+DOWNSTREAM_CHANNELS = ('phs', 'GFP', 'Texas Red', 'Cy5')
+
+
+def natural_key(text: str) -> list:
+    '''Sort key that orders embedded numbers numerically: s2 before s10.'''
+    return [int(tok) if tok.isdigit() else tok
+            for tok in re.split(r'(\d+)', text)]
+
+
+def downstream_incompatible(well: str, position: str) -> bool:
+    '''True if cellapp-analysis cannot parse a <well>_<position> stub, e.g.
+    a 384-well plate well (I13) or a site past s99.'''
+    return DOWNSTREAM_STUB_RE.match(f'{well}_{position}') is None
+
 
 class Frame(NamedTuple):
     timepoint: int
@@ -74,7 +101,7 @@ class StackIndex:
 
     @property
     def positions(self) -> list:
-        return sorted({pos for _, pos, _ in self.stacks})
+        return sorted({pos for _, pos, _ in self.stacks}, key=natural_key)
 
     @property
     def wavelengths(self) -> list:
@@ -88,6 +115,16 @@ class StackIndex:
     def files(self, well: str, position: str, wavelength: str) -> list:
         '''Paths of one stack in timepoint order; empty if it does not exist.'''
         return [f.path for f in self.stacks.get((well, position, wavelength), [])]
+
+    def rename_positions(self, new_names: dict) -> None:
+        '''Rename positions, {old: new}; positions not listed keep their name.'''
+        renamed = {}
+        for (well, pos, w), frames in self.stacks.items():
+            key = (well, new_names.get(pos, pos), w)
+            if key in renamed:
+                raise ValueError(f'Renaming positions would merge two stacks into {key}')
+            renamed[key] = frames
+        self.stacks = renamed
 
     def first_file(self, wavelength: Optional[str] = None) -> Path:
         '''Earliest frame of the first stack (for a wavelength, if given).'''
@@ -116,8 +153,10 @@ def well_label(row: int, col: int) -> str:
 def parse_new_filename(filename: str) -> Optional[dict]:
     '''Fields of a new-scheme file name, or None if it does not match.
 
-    Returns name, well, position, wavelength, and timepoint / z as ints
-    (None when the token is absent).'''
+    Returns name, well, wavelength, site_grid = (sr, sc), and timepoint / z
+    as ints (None when the token is absent). position is left as None: the
+    site number depends on which other sites were acquired, so _build_index
+    assigns it.'''
     m = NEW_NAME_RE.match(filename)
     if not m:
         return None
@@ -125,7 +164,8 @@ def parse_new_filename(filename: str) -> Optional[dict]:
     return {
         'name': g['name'],
         'well': well_label(int(g['row']), int(g['col'])),
-        'position': f"sc{g['site_col']}sr{g['site_row']}",
+        'position': None,
+        'site_grid': (int(g['site_row']), int(g['site_col'])),
         'wavelength': 'w' + g['wavelength'],
         'timepoint': int(g['timepoint']) if g['timepoint'] else None,
         'z': int(g['z']) if g['z'] else None,
@@ -174,6 +214,13 @@ def _build_index(records: list) -> Optional[StackIndex]:
     if len(names) > 1:
         raise ValueError(f'Images from more than one experiment: {names}')
 
+    # New-scheme sites are numbered row by row over the sites acquired on the
+    # plate: 'E10 : Site 5' in the stage label is sc02_sr05 when the plate's
+    # sites are sr02 sc02 | sr03 sc02,04,07 | sr05 sc02 ...
+    grid = sorted({fields['site_grid'] for fields, _ in records
+                   if fields.get('site_grid')})
+    site_number = {rc: n for n, rc in enumerate(grid, start=1)}
+
     # Keep z out of the position name unless there is more than one plane:
     # each z-plane then becomes its own (t, y, x) stack.
     multi_z = len({fields['z'] for fields, _ in records}) > 1
@@ -181,8 +228,11 @@ def _build_index(records: list) -> Optional[StackIndex]:
     stacks = defaultdict(list)
     for fields, path in records:
         position = fields['position']
+        if position is None:
+            position = f"s{site_number[fields['site_grid']]}"
         if multi_z:
-            position += f"z{fields['z'] or 0:02d}"
+            # after an underscore so the <well>_s<site>_ stub stays intact
+            position += f"_z{fields['z'] or 0:02d}"
         key = (fields['well'], position, fields['wavelength'])
         stacks[key].append(Frame(fields['timepoint'], path))
 
